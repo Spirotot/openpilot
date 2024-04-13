@@ -11,6 +11,8 @@ from common.conversions import Conversions as CV
 from common.cached_params import CachedParams
 from common.params import Params
 from cereal import car
+from selfdrive.car.chrysler.interface import GAS_RESUME_SPEED
+
 
 GearShifter = car.CarState.GearShifter
 ButtonType = car.CarState.ButtonEvent.Type
@@ -37,6 +39,7 @@ class CarController:
 
     self.settingsParams = Params()
     self.cachedParams = CachedParams()
+    self.auto_resume = self.settingsParams.get_bool('jvePilot.settings.autoResume')
     self.minAccSetting = V_CRUISE_MIN_MS if self.settingsParams.get_bool("IsMetric") else V_CRUISE_MIN_IMPERIAL_MS
     self.round_to_unit = CV.MS_TO_KPH if self.settingsParams.get_bool("IsMetric") else CV.MS_TO_MPH
     self.steerNoMinimum = self.settingsParams.get_bool("jvePilot.settings.steer.noMinimum")
@@ -166,7 +169,7 @@ class CarController:
       if enabled and not CS.out.brakePressed:
         button_counter_offset = [1, 1, 0, None][self.button_frame % 4]
         if button_counter_offset is not None:
-          if resume:
+          if self.auto_resume and (resume or (CS.out.standstill and not CS.out.cruiseState.enabled)):
             buttons_to_press = ["ACC_Resume"]
           elif CS.out.cruiseState.enabled:  # Control ACC
             buttons_to_press = [self.auto_follow_button(CC, CS), self.hybrid_acc_button(CC, CS)]

@@ -7,6 +7,7 @@ from openpilot.selfdrive.car.interfaces import CarInterfaceBase
 from common.params import Params
 
 ButtonType = car.CarState.ButtonEvent.Type
+GAS_RESUME_SPEED = 1
 
 class CarInterface(CarInterfaceBase):
   @staticmethod
@@ -101,15 +102,25 @@ class CarInterface(CarInterfaceBase):
     ret = self.CS.update(self.cp, self.cp_cam)
 
     # events
-    events = self.create_common_events(ret, extra_gears=[car.CarState.GearShifter.low])
+    events = self.create_common_events(ret, extra_gears=[car.CarState.GearShifter.low], pcm_enable=False, gas_resume_speed=GAS_RESUME_SPEED)
 
-    # Low speed steer alert hysteresis logic
-    if self.CP.minSteerSpeed > 0. and ret.vEgo < (self.CP.minSteerSpeed + 0.5):
-      self.low_speed_alert = True
-    elif ret.vEgo > (self.CP.minSteerSpeed + 1.):
-      self.low_speed_alert = False
-    if self.low_speed_alert:
-      events.add(car.CarEvent.EventName.belowSteerSpeed)
+    if c.enabled and ret.brakePressed and ret.standstill and not self.disable_auto_resume:
+      events.add(car.CarEvent.EventName.accBrakeHold)
+    else:
+      # Low speed steer alert hysteresis logic
+      if self.CP.minSteerSpeed > 0. and ret.vEgo < (self.CP.minSteerSpeed + 0.5):
+        self.low_speed_alert = True
+      elif ret.vEgo > (self.CP.minSteerSpeed + 1.):
+        self.low_speed_alert = False
+      if self.low_speed_alert:
+        events.add(car.CarEvent.EventName.belowSteerSpeed)
+
+    if self.CS.button_pressed(ButtonType.cancel):
+      events.add(car.CarEvent.EventName.buttonCancel)  # cancel button pressed
+    elif ret.cruiseState.enabled and not self.CS.out.cruiseState.enabled:
+      events.add(car.CarEvent.EventName.pcmEnable)  # cruse is enabled
+    elif (not ret.cruiseState.enabled) and (ret.vEgo > GAS_RESUME_SPEED or (self.CS.out.cruiseState.enabled and (not ret.standstill))):
+      events.add(car.CarEvent.EventName.pcmDisable)  # give up, too fast to resume
 
     ret.events = events.to_msg()
 
